@@ -6,3 +6,4 @@ gpu_fftwf.c
 *.pyc
 gmon.out
 
+hello_fft/

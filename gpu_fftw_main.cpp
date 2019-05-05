@@ -284,7 +284,7 @@ bool tests()
    bool pass=true;
    show_fwd_rev(256);
    show_accuracy(256);
-   show_speed(pow(2,10),1000);
+   show_speed(pow(2,13),10000);
    std::cerr << std::endl;
    pass&=test_override_fftw3();
 

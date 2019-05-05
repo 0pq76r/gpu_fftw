@@ -3,13 +3,13 @@
 ####
 
 MAKEFLAGS=-j4
-RPIARCH=armv6l-unknown-linux-gnueabihf
+RPIARCH=armv7l-unknown-linux-gnueabihf
 RPIDIR=~/x-tools/$(RPIARCH)
 RPISYSROOT=~/x-tools/$(RPIARCH)/$(RPIARCH)/sysroot
 RPICXX=$(RPIDIR)/bin/$(RPIARCH)-g++
 RPICC=$(RPIDIR)/bin/$(RPIARCH)-gcc
-RPICXXFLAGS=-march=armv6 -mfloat-abi=hard -mfpu=vfp -O3 -ffast-math \
-                    -pipe -mtune=arm1176jzf-s -fstack-protector --param=ssp-buffer-size=4
+RPICXXFLAGS=-mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -O3 -ffast-math \
+                    -pipe -fstack-protector --param=ssp-buffer-size=4
 RPILDFLAGS=-Wl,-O1,--sort-common,--as-needed,-z,relro
 
 #####
@@ -48,9 +48,16 @@ RPATH=
 instantiate=sed -e 's/FPREFIX/$(2)/g' -e 's/PREFIX/$(1)/g' $(3) > $(4)
 make_so=$(CC) $(CFLAGS) -shared -fpic -Wl,-soname,libgpu$(1).so -o $@ $^ -ldl -l$(2)
 
-.PHONY: all vsn.h
+.PHONY: all vsn.h clean fft_update
+.NOTPARALLEL: fft_update
 
 all: $(TARGETLIBS) $(TARGETEXES)
+
+########################################################
+# Fetch current hello_fft
+########################################################
+./hello_fft/%.c:
+	$(MAKE) fft_update
 
 ########################################################
 # Shared libs and main executable
@@ -91,6 +98,7 @@ gpu_fftw: gpu_fftw_main.cpp vsn.h libgpufftw.so libgpufftwf.so
 # Clean, update hello_fft from upstream
 ########################################################
 fft_update:
+	mkdir -p hello_fft
 	cd hello_fft
 	svn checkout https://github.com/raspberrypi/firmware/trunk/opt/vc/src/hello_pi/hello_fft
 
@@ -101,5 +109,5 @@ clean:
 	done
 
 test: gpu_fftw
-	LD_PRELOAD=./libgpufftwf.so LD_LIBRARY_PATH=. GPU_FFTW_DEBUG=7 valgrind --quiet --leak-check=full ./gpu_fftw
+	LD_PRELOAD="./libgpufftwf.so" GPU_FFTW_DEBUG=7 valgrind --quiet --leak-check=full ./gpu_fftw -t
 

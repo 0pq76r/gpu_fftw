@@ -17,7 +17,7 @@
 
 void SO_LOCAL copy_input(int N,PREFIX_complex* in,struct GPU_FFT* fft)
 {
-   GPU_FFT_COMPLEX* base;
+   struct GPU_FFT_COMPLEX* base;
    int i,j;
    int jobs=1;
    if (in==NULL) {
@@ -33,8 +33,8 @@ void SO_LOCAL copy_input(int N,PREFIX_complex* in,struct GPU_FFT* fft)
    for (j=0; j<jobs; j++) {
       base = fft->in + j*fft->step; // We need to convert float to bouble
       for (i=0; i<N; i++) {
-         base[i][0] = (float) in[i][0];
-         base[i][1] = (float) in[i][1];
+         base[i].re = (float) in[i][0];
+         base[i].im = (float) in[i][1];
       }
    }
    }
@@ -42,7 +42,7 @@ void SO_LOCAL copy_input(int N,PREFIX_complex* in,struct GPU_FFT* fft)
 
 void SO_LOCAL copy_output(int N,PREFIX_complex* restrict out,struct GPU_FFT* restrict fft)
 {
-   GPU_FFT_COMPLEX* restrict base;
+   struct GPU_FFT_COMPLEX* restrict base;
    int i,j;
    int jobs=1;
    if (out==NULL) {
@@ -61,8 +61,8 @@ void SO_LOCAL copy_output(int N,PREFIX_complex* restrict out,struct GPU_FFT* res
       for (j=0; j<jobs; j++) {
          base = fft->out + j*fft->step; // output buffer
          for (i=0; i<N; i++) {
-            out[i][0] = base[i][0];
-            out[i][1] = base[i][1];
+            out[i][0] = base[i].re;
+            out[i][1] = base[i].im;
          }
    }
 
@@ -121,6 +121,7 @@ PREFIX_plan SO_EXPORT PREFIX_plan_dft_1d(int n, PREFIX_complex *in, PREFIX_compl
    struct GPU_FFTW_PLAN* metaplan;
    static int mplan_n = 0;
    static char* env=NULL;
+   static char* fallback=NULL;
 
    /* This is triggered by the destructor function */
    if (n==-1) { 
@@ -138,6 +139,7 @@ PREFIX_plan SO_EXPORT PREFIX_plan_dft_1d(int n, PREFIX_complex *in, PREFIX_compl
       metaplan = &mplan_arr[mplan_n++];
    else {
       say(LOG_ERR,"Sorry, ran out of space for plans: max %d plans",MPLAN_ARRSIZE);
+      fallback="ran out of space for plans";
       goto use_fftw3;
    }
 
@@ -147,8 +149,10 @@ PREFIX_plan SO_EXPORT PREFIX_plan_dft_1d(int n, PREFIX_complex *in, PREFIX_compl
    metaplan->out=(void*) out;
    metaplan->gpu=false;
    env = getenv("GPU_FFTW_DISABLE");
-   if (env!=NULL)
+   if (env!=NULL){
+      fallback="env GPU_FFTW_DISABLE";
       goto use_fftw3;
+   }
 
    /* Use FFTW if:
     *     - n is not a power of 2 */
@@ -157,9 +161,10 @@ PREFIX_plan SO_EXPORT PREFIX_plan_dft_1d(int n, PREFIX_complex *in, PREFIX_compl
       u = log2u(u);
       metaplan->plan=(void*)gpu_fftw_plan(n,u,in,out,sign,flags);
       metaplan->gpu=true;
-      if (metaplan->plan==NULL)
+      if (metaplan->plan==NULL) {
+         fallback="no gpu_fftw_plan";
          goto use_fftw3;
-      else {
+      } else {
          copy_input(n,in,(struct GPU_FFT*) metaplan->plan);
          gpu_active(true);
          say(LOG_INFO,"plan #%d - gpu fft plan running (N=%d,%s)\n",mplan_n,n,
@@ -169,7 +174,7 @@ PREFIX_plan SO_EXPORT PREFIX_plan_dft_1d(int n, PREFIX_complex *in, PREFIX_compl
    } else {
 
 use_fftw3:
-      say(LOG_INFO,"%s","Falling back to fftw3\n");
+      say(LOG_INFO,"%s (%s)\n","Falling back to fftw3", fallback);
       PREFIX_plan plan = (*fftw_plan_fun)(n,in,out,sign,flags);
       metaplan->gpu=false;
       metaplan->plan=(void*)plan;
